@@ -1,83 +1,74 @@
+import json
 import random
-
 import torch
-from torch import nn
-from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from torch import nn
+from torch.nn.utils.rnn import pack_sequence, PackedSequence
+from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+from cleanarticle import TestArticleData
 
 
 class Encoder(nn.Module):
-    """
-       GRU Encoder for seq2seq model.
-    """
-
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers):
+    def __init__(self, vocab_size, emb_dim, hid_dim, num_layers):
         """
-        Initializes the encoder.
-
-        Args:
-            vocab_size (int): Size of the vocabulary.
-            embedding_dim (int): Dimension of embedding vectors.
-            hidden_dim (int): Number of hidden units in LSTM.
+        Bidirectional GRU Encoder.
         """
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.gru = nn.GRU(embedding_dim, hidden_dim, num_layers=num_layers,
-                            bidirectional=True, batch_first=True)
+        self.embedding = nn.Embedding(vocab_size, emb_dim)
+        self.gru = nn.GRU(input_size=emb_dim,
+                          hidden_size=hid_dim,
+                          num_layers=num_layers,
+                          bidirectional=True,
+                          batch_first=True)
 
     def forward(self, x):
         """
         Args:
-            x (Tensor): Input sequence tensor of shape (batch, seq_len)
+            x: (batch_size, seq_len) - Input token indices
 
         Returns:
-            Tuple[Tensor, Tensor]: Final hidden and cell states
+            output: (batch_size, seq_len, 2*hid_dim) - GRU outputs
+            h_n: (2*num_layers, batch_size, hid_dim) - Hidden states from both directions
         """
-        x = self.embedding(x)
-        outputs, h_n = self.gru(x)
-        return outputs, h_n
+        embedded = self.embedding(x)
+        output, h_n = self.gru(embedded)
+        return output, h_n
+
 
 class Decoder(nn.Module):
-    """
-    LSTM Decoder for seq2seq model.
-    """
-
-    def __init__(self, vocab_size, sosidx, eosidx, embedding_dim, hidden_dim, num_layers):
+    def __init__(self, vocab_size, emb_dim, hid_dim, num_layers, sos_idx, eos_idx):
         """
-        Initializes the decoder.
-
-        Args:
-            vocab_size (int): Size of the vocabulary.
-            sosidx (int): Index of start-of-sequence token.
-            embedding_dim (int): Dimension of embedding vectors.
-            hidden_dim (int): Number of hidden units in LSTM.
-            forcing (float): Probability of teacher forcing.
+        GRU Decoder with Attention.
         """
-
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.gru = nn.GRU(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True)
+        self.embedding = nn.Embedding(vocab_size, emb_dim)
+        self.gru = nn.GRU(input_size=emb_dim,
+                          hidden_size=hid_dim,
+                          num_layers=num_layers,
+                          batch_first=True)
 
-        self.project_h = nn.Linear(2 * hidden_dim, hidden_dim)  # To combine bidirectional encoder h_n
-        self.attn_proj = nn.Linear(2 * hidden_dim, hidden_dim)  # For projecting encoder outputs before attention
-        self.combine_context = nn.Linear(3 * hidden_dim, hidden_dim)  # Combine context + decoder output
-        self.hidden_to_vocab = nn.Linear(hidden_dim, vocab_size)  # Final projection to vocab size
+        self.project_h = nn.Linear(2 * hid_dim, hid_dim)  # To combine bidirectional encoder h_n
+        self.attn_proj = nn.Linear(2 * hid_dim, hid_dim)  # For projecting encoder outputs before attention
+        self.combine_context = nn.Linear(3 * hid_dim, hid_dim)  # Combine context + decoder output
+        self.hidden_to_vocab = nn.Linear(hid_dim, vocab_size)  # Final projection to vocab size
 
         self.num_layers = num_layers
-        self.hid_dim = hidden_dim
+        self.hid_dim = hid_dim
 
-        self.sos_idx = sosidx
-        self.eos_idx = eosidx
+        self.sos_idx = sos_idx
+        self.eos_idx = eos_idx
 
-    def forward(self, enc_outputs, enc_h_n, targets):
+    def forward(self, enc_outputs, enc_h_n, targets, forcing=0.5):
         """
-        Decoder forward pass
+        Decoder forward pass with teacher forcing.
 
         Args:
             enc_outputs: (batch_size, src_len, 2*hid_dim)
             enc_h_n: (2*num_layers, batch_size, hid_dim)
             targets: (batch_size, target_len) - ground truth sequences
+            forcing: float in [0, 1] - teacher forcing ratio
 
         Returns:
             outputs: (batch_size, target_len, vocab_size)
@@ -116,6 +107,11 @@ class Decoder(nn.Module):
             logits = self.hidden_to_vocab(combined)  # (batch_size, vocab_size)
             outputs.append(logits)
 
+            # Teacher forcing
+            if random.random() < forcing:
+                decoder_input = targets[:, t].unsqueeze(1)  # (batch_size, 1)
+            else:
+                decoder_input = torch.argmax(logits, dim=1, keepdim=True)  # (batch_size, 1)
 
         return torch.stack(outputs, dim=1)  # (batch_size, target_len, vocab_size)
 
@@ -171,78 +167,83 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-    """
-    Full Seq2Seq model combining encoder and decoder.
-    """
-
-    def __init__(self, vocab_size, sosidx, embedding_dim=32, hidden_dim=96, num_layers = 2):
+    def __init__(self, enc_voc_size, dec_voc_size, enc_emb_dim, dec_emb_dim, hid_dim, num_layers, sos_idx, eos_idx):
         """
-        Initializes the Seq2Seq model.
-
-        Args:
-            vocab_size (int): Vocabulary size.
-            sosidx (int): Index of start-of-sequence token.
-            embedding_dim (int): Embedding size.
-            hidden_dim (int): LSTM hidden size.
-            forcing (float): Teacher forcing probability.
+        Full Seq2Seq model with encoder and decoder.
         """
         super().__init__()
-        self.encoder = Encoder(vocab_size, embedding_dim, hidden_dim, num_layers)
-        self.decoder = Decoder(vocab_size, sosidx, embedding_dim, hidden_dim, num_layers)
+        self.encoder = Encoder(enc_voc_size, enc_emb_dim, hid_dim, num_layers)
+        self.decoder = Decoder(dec_voc_size, dec_emb_dim, hid_dim, num_layers, sos_idx, eos_idx)
 
-    def forward(self, input_dates, target_dates):
+    def forward(self, input, targets, forcing=0.5):
         """
-        Forward pass through the model.
+        Training forward pass.
 
         Args:
-            input_dates (Tensor): Input sequence batch.
-            target_dates (Tensor): Target sequence batch.
+            input: (batch_size, src_len)
+            targets: (batch_size, tgt_len)
+            forcing: teacher forcing ratio
 
         Returns:
-            Tensor: Decoder output logits.
+            logits: (batch_size, tgt_len, vocab_size)
         """
-        h_n, c_n = self.encoder(input_dates)
-        return self.decoder(h_n, c_n, target_dates)
+        enc_outputs, enc_h_n = self.encoder(input)
+        return self.decoder(enc_outputs, enc_h_n, targets, forcing)
 
-def train_nn(epochs=5, batch_size=64, lr=0.001):
-    """
-    Trains the Seq2Seq model.
+    def predict(self, input_tensor, max_len=50):
+        """
+        Inference forward pass.
 
-    Args:
-        epochs (int): Number of training epochs.
-        batch_size (int): Batch size.
-        lr (float): Learning rate.
-    """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        Args:
+            input_tensor: (batch_size, src_len)
 
-    dataset = DateData() # TODO
-    vocab_size = len(dataset.idx2token) ## DONT TOUCH ##
-    sosidx = dataset.token2idx['^'] ## DONT TOUCH ##
-    model = Seq2Seq(vocab_size, sosidx).to(device) # Step into ##
+        Returns:
+            predicted_sequences: (batch_size, decoded_len)
+        """
+        self.eval()
+        with torch.no_grad():
+            enc_outputs, enc_h_n = self.encoder(input_tensor)
+            return self.decoder.inference(enc_outputs, enc_h_n, max_len=max_len)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr) # Maybe touch #
-    loss_fn = nn.CrossEntropyLoss() # Maybe touch #
+def train_nn(epochs=5, batch_size=32, lr=0.001):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    article_data = TestArticleData()
+    print("Test 1")
+    model = Seq2Seq(13, 13, 32, 32, 128, 2, 11, 12).to(device)
+    loss_fn = nn.CrossEntropyLoss()
 
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    print("Test 2")
     for epoch in range(epochs):
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True) # Can touch
-        progress_bar = tqdm(dataloader, desc=f"Epoch {epoch + 1}/{epochs}") # Can touch
+        article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True)
+        progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
 
-        for _, data in enumerate(progress_bar): ## DONT TOUCH ##
+        for i, data in enumerate(progress_bar):
             inputs, targets = data
-            inputs = inputs.to(device)
-            targets = targets.to(device)
 
-            # Actual output of the model
-            output = model(inputs, targets)
+            inputs.to(device)
+            targets.to(device)
 
-            # Resizing of the model to be able to fit in the loss function
-            output = output.view(-1, output.size(-1)) # Dim: [N,C]
-            target = targets.view(-1) # Dim: [N]
+            optimizer.zero_grad()
 
-            loss = loss_fn(output, target)
+            logits = model(inputs)
+            loss = loss_fn(logits, targets)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) ## Preventing parameters from blowing up.
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            progress_bar.set_postfix({'loss': loss.item()})
-        torch.save(model.state_dict(), "seq2seq.pt")
+            print(model.predict(targets))
+
+        torch.save(model.state_dict(), "article.pt")
+
+def summarize(article_filename = "testFile.txt") -> None:
+    vocab_size = 2502
+    model = Seq2Seq(vocab_size, vocab_size, 32, 32, 128, 2, vocab_size-2, vocab_size-1)
+    model.load_state_dict(torch.load("article.pt", map_location="cpu"))
+    model.eval()
+    with open(article_filename, 'r', encoding="utf-8") as f:
+        article = json.load(f)
+    input_tensor = torch.tensor(article)
+    print(model.predict(input_tensor)[0])
+
+train_nn()
