@@ -50,7 +50,7 @@ def process_corpus(corpus_dir="final_news_summary.csv"):
     - Saves results to JSON files
     """
     df = pd.read_csv(corpus_dir)
-    LIMITER = 100000
+    LIMITER = 50000
     # Select variables
     y = df.iloc[: LIMITER, -1].copy().to_numpy()
     X = df.iloc[: LIMITER, 0].copy().to_numpy()
@@ -207,5 +207,5 @@ class TestArticleData(Dataset):
         sentence = self.corpus[idx]
         target = self.t_corpus[idx]
         return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
-
+#
 # process_corpus()

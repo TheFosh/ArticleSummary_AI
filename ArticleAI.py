@@ -3,6 +3,7 @@ import random
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.distributed.tensor import DTensor
 from torch.nn.utils.rnn import pack_sequence, PackedSequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -190,6 +191,16 @@ class Seq2Seq(nn.Module):
         enc_outputs, enc_h_n = self.encoder(input)
         return self.decoder(enc_outputs, enc_h_n, targets, forcing)
 
+    def convert_to_string(self, inputs):
+        with open("t_idx2token.json", 'r', encoding="utf-8") as f:
+            idx2token = {int(idx): token for idx, token in json.load(f).items()}
+
+        line = "\n"
+        for token in inputs:
+            line += idx2token[token.item()]
+
+        return line
+
     def predict(self, input_tensor, max_len=50):
         """
         Inference forward pass.
@@ -203,19 +214,20 @@ class Seq2Seq(nn.Module):
         self.eval()
         with torch.no_grad():
             enc_outputs, enc_h_n = self.encoder(input_tensor)
-            return self.decoder.inference(enc_outputs, enc_h_n, max_len=max_len)
+            return (self.decoder.inference(enc_outputs, enc_h_n, max_len=max_len))
 
 def train_nn(epochs=5, batch_size=32, lr=0.001):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     article_data = ArticleData()
     print("Test 1")
-    model = Seq2Seq(13, 13, 32, 32, 128, 2, 11, 12).to(device)
+    vocab_size = 2500
+    model = Seq2Seq( vocab_size, vocab_size, 32, 32, 128, 2, vocab_size -2, vocab_size-1).to(device)
     loss_fn = nn.CrossEntropyLoss()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("Test 2")
     for epoch in range(epochs):
-        article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True)
+        article_loader = DataLoader(article_data, batch_size=1, shuffle=True)
         progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
 
         for i, data in enumerate(progress_bar):
@@ -224,26 +236,33 @@ def train_nn(epochs=5, batch_size=32, lr=0.001):
             inputs.to(device)
             targets.to(device)
 
-            optimizer.zero_grad()
+            output = model(inputs, targets, 0.0)
+            output = output.view(-1, output.size(-1))
+            target = targets.view(-1)
+            loss = loss_fn(output, target)
 
-            logits = model(inputs)
-            loss = loss_fn(logits, targets)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+            if i % batch_size == batch_size -1:
+                optimizer.zero_grad()
 
-            print(model.predict(targets))
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+
+            predication_tensor = model.predict(inputs)[0]
+            print(model.convert_to_string(predication_tensor))
 
         torch.save(model.state_dict(), "article.pt")
 
 def summarize(article_filename = "testFile.txt") -> None:
-    vocab_size = 2502
-    model = Seq2Seq(vocab_size, vocab_size, 32, 32, 128, 2, vocab_size-2, vocab_size-1)
+    vocab_size = 2500
+    model = Seq2Seq(vocab_size, 9, 32, 32, 128, 2, vocab_size-2, vocab_size-1)
     model.load_state_dict(torch.load("article.pt", map_location="cpu"))
     model.eval()
     with open(article_filename, 'r', encoding="utf-8") as f:
         article = json.load(f)
     input_tensor = torch.tensor(article)
-    print(model.predict(input_tensor)[0])
+    tensor_prediction = model.predict(input_tensor)[0]
+    print(model.convert_to_string(tensor_prediction, ))
 
 train_nn()
+summarize()
