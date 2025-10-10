@@ -50,17 +50,16 @@ def process_corpus(corpus_dir="final_news_summary.csv"):
     - Saves results to JSON files
     """
     df = pd.read_csv(corpus_dir)
-
+    LIMITER = 100000
     # Select variables
-    y = df.iloc[:, -1].copy().to_numpy()
-    X = df.iloc[:, 0].copy().to_numpy()
-
-    print(len(X))
+    y = df.iloc[: LIMITER, -1].copy().to_numpy()
+    X = df.iloc[: LIMITER, 0].copy().to_numpy()
 
     # Build vocab and tokenize corpus
     a_token2idx, a_idx2token = identify_tokens(X)
     t_token2idx, t_idx2token = identify_tokens(y)
-    a_tokens, t_tokens = tokenize_list(X, y, a_token2idx, t_token2idx)
+    a_tokens = tokenize_list(X, a_token2idx)
+    t_tokens = tokenize_list(y, t_token2idx)
 
     # Save everything
     print("Saving corpus and dictionaries...")
@@ -126,27 +125,14 @@ def tokenize(text, token2idx):
     return tokens
 
 
-def tokenize_list(input_lines, target_lines, input_token2idx, target_token2idx):
+def tokenize_list(lines, token2idx):
     """
     Tokenize a list of lines and return them sorted by length.
     """
-    input_tokenized_lines = [tokenize('^'+line+'~', input_token2idx) for line in tqdm(input_lines, desc="Tokenizing corpus")]
-    input_tokenized_lines.sort(key=len)
-    output_tokenized_lines = [tokenize('^'+line+'~', target_token2idx) for line in tqdm(target_lines, desc="Tokenizing corpus")]
-    output_tokenized_lines.sort(key=len)
+    tokenized_lines = [tokenize('^'+line+'~', token2idx) for line in tqdm(lines, desc="Tokenizing corpus")]
+    tokenized_lines.sort(key=len)
 
-    for i in range(len(input_tokenized_lines)):
-        in_len = len(input_tokenized_lines[i])
-        out_len = len(output_tokenized_lines[i])
-        dif = in_len - out_len
-        if dif > 0:
-            for j in range(dif):
-                output_tokenized_lines[i].append(target_token2idx['~'])
-        else:
-            for j in range(dif):
-                input_tokenized_lines[i].append(input_token2idx['~'])
-
-    return input_tokenized_lines, output_tokenized_lines
+    return tokenized_lines
 
 
 def get_cleaned_corpus():
@@ -173,9 +159,10 @@ def get_cleaned_corpus():
 def get_cleaned_out(corpus_dir = "final_news_summary.csv"):
     df = pd.read_csv(corpus_dir)
 
+    LIMITER = 10000
     # Select variables
-    y = df.iloc[:, -1].copy().to_numpy()
-    X = df.iloc[:, 0].copy().to_numpy()
+    y = df.iloc[:LIMITER, -1].copy().to_numpy()
+    X = df.iloc[:LIMITER, 0].copy().to_numpy()
 
     print(len(X))
 
