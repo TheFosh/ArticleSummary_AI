@@ -11,6 +11,8 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
+from DutterExample import seq2seqAttn
+
 
 class AdditionSet(Dataset):
     def __init__(self):
@@ -35,7 +37,6 @@ class AdditionSet(Dataset):
 
     def __getitem__(self, item):
         return self.current_inputs[item], self.current_targets[item]
-
 
 def train_nn(epochs=5, batch_size=32, lr=0.001):
     addition_data = AdditionSet()
