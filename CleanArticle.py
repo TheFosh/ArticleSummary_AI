@@ -9,7 +9,6 @@ import torch
 from pandas import read_csv
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 
 
 def output_clean_data():
@@ -138,12 +137,14 @@ def tokenize_list(input_lines, target_lines, input_token2idx, target_token2idx):
 
     for i in range(len(input_tokenized_lines)):
         in_len = len(input_tokenized_lines[i])
-        out_len = len(output_tokenized_lines)
-        dif = in_len -out_len
+        out_len = len(output_tokenized_lines[i])
+        dif = in_len - out_len
         if dif > 0:
-            output_tokenized_lines[i] += target_token2idx[-1] * dif
+            for j in range(dif):
+                output_tokenized_lines[i].append(target_token2idx['~'])
         else:
-            input_tokenized_lines[i] += input_token2idx[-1] * dif
+            for j in range(dif):
+                input_tokenized_lines[i].append(input_token2idx['~'])
 
     return input_tokenized_lines, output_tokenized_lines
 
@@ -220,4 +221,4 @@ class TestArticleData(Dataset):
         target = self.t_corpus[idx]
         return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
 
-process_corpus()
+# process_corpus()

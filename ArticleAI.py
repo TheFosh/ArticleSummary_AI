@@ -7,7 +7,7 @@ from torch.nn.utils.rnn import pack_sequence, PackedSequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from cleanarticle import TestArticleData
+from CleanArticle import ArticleData
 
 
 class Encoder(nn.Module):
@@ -207,7 +207,7 @@ class Seq2Seq(nn.Module):
 
 def train_nn(epochs=5, batch_size=32, lr=0.001):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    article_data = TestArticleData()
+    article_data = ArticleData()
     print("Test 1")
     model = Seq2Seq(13, 13, 32, 32, 128, 2, 11, 12).to(device)
     loss_fn = nn.CrossEntropyLoss()
