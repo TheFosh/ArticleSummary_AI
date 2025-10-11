@@ -61,6 +61,8 @@ def process_corpus(corpus_dir="final_news_summary.csv"):
     a_tokens = tokenize_list(X, a_token2idx)
     t_tokens = tokenize_list(y, t_token2idx)
 
+    a_tokens, t_tokens = sort_dataset(a_tokens, t_tokens)
+
     # Save everything
     print("Saving corpus and dictionaries...")
     with open("corpus.json", 'w', encoding="utf-8") as f:
@@ -77,6 +79,16 @@ def process_corpus(corpus_dir="final_news_summary.csv"):
         json.dump(t_idx2token, f)
 
     return a_tokens, a_token2idx, a_idx2token, t_token2idx, t_idx2token
+
+def sort_dataset(input_lines, target_lines):
+    """
+    Sort input-output pairs together by input length descending,
+    preserving correspondence between input and output.
+    """
+    paired = list(zip(input_lines, target_lines))
+    paired.sort(key=lambda x: len(x[0]), reverse=True)  # descending length
+    sorted_inputs, sorted_targets = zip(*paired)
+    return list(sorted_inputs), list(sorted_targets)
 
 def identify_tokens(lines, num_ngrams=2500):
     """
@@ -130,7 +142,6 @@ def tokenize_list(lines, token2idx):
     Tokenize a list of lines and return them sorted by length.
     """
     tokenized_lines = [tokenize('^'+line+'~', token2idx) for line in tqdm(lines, desc="Tokenizing corpus")]
-    tokenized_lines.sort(key=len)
 
     return tokenized_lines
 

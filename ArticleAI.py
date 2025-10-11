@@ -3,6 +3,7 @@ import random
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -214,7 +215,18 @@ class Seq2Seq(nn.Module):
             enc_outputs, enc_h_n = self.encoder(input_tensor)
             return (self.decoder.inference(enc_outputs, enc_h_n, max_len=max_len))
 
-def train_nn(epochs=5, batch_size=32, lr=0.001):
+def collate_batch(batch, input_pad_token=2499, target_pad_token=2499):
+    """
+    Pads articles and summaries in batch.
+    Accepts custom pad token IDs from dataset.
+    """
+
+    inputs, targets = zip(*batch)
+    padded_inputs = pad_sequence(inputs, batch_first=True, padding_value=input_pad_token)
+    padded_targets = pad_sequence(targets, batch_first=True, padding_value=target_pad_token)
+    return padded_inputs, padded_targets
+
+def train_nn(epochs=5, batch_size=4, lr=0.001):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     article_data = ArticleData()
     print("Test 1")
@@ -227,7 +239,7 @@ def train_nn(epochs=5, batch_size=32, lr=0.001):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("Test 2")
     for epoch in range(epochs):
-        article_loader = DataLoader(article_data, batch_size=1, shuffle=True)
+        article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
         progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
         for i, data in enumerate(progress_bar):
             model.train()
@@ -245,13 +257,14 @@ def train_nn(epochs=5, batch_size=32, lr=0.001):
 
             loss = loss_fn(output, target).to(device)
 
-            if i % batch_size == batch_size -1:
-                optimizer.zero_grad()
-
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-
+            # if i % batch_size == batch_size -1:
+            #     optimizer.zero_grad()
+            #
+            #
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
             predication_tensor = model.predict(inputs)[0]
             print(model.convert_to_string(predication_tensor))
 
