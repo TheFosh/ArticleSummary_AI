@@ -207,5 +207,5 @@ class TestArticleData(Dataset):
         sentence = self.corpus[idx]
         target = self.t_corpus[idx]
         return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
-#
+
 # process_corpus()

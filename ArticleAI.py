@@ -3,8 +3,6 @@ import random
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.distributed.tensor import DTensor
-from torch.nn.utils.rnn import pack_sequence, PackedSequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -221,6 +219,8 @@ def train_nn(epochs=5, batch_size=32, lr=0.001):
     article_data = ArticleData()
     print("Test 1")
     vocab_size = 2500
+    MEMORY_LIMIT = 10000
+
     model = Seq2Seq( vocab_size, vocab_size, 32, 32, 128, 2, vocab_size -2, vocab_size-1).to(device)
     loss_fn = nn.CrossEntropyLoss()
 
@@ -229,17 +229,21 @@ def train_nn(epochs=5, batch_size=32, lr=0.001):
     for epoch in range(epochs):
         article_loader = DataLoader(article_data, batch_size=1, shuffle=True)
         progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
-
         for i, data in enumerate(progress_bar):
+            model.train()
             inputs, targets = data
 
-            inputs.to(device)
-            targets.to(device)
+            if len(inputs) > MEMORY_LIMIT:
+                continue
+
+            inputs = inputs.to(device)
+            targets = targets.to(device)
 
             output = model(inputs, targets, 0.0)
-            output = output.view(-1, output.size(-1))
-            target = targets.view(-1)
-            loss = loss_fn(output, target)
+            output = output.view(-1, output.size(-1)).to(device)
+            target = targets.view(-1).to(device)
+
+            loss = loss_fn(output, target).to(device)
 
             if i % batch_size == batch_size -1:
                 optimizer.zero_grad()
