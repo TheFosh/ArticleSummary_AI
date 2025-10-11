@@ -9,6 +9,7 @@ import torch
 from pandas import read_csv
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from torch.nn.utils.rnn import pad_sequence
 
 
 def output_clean_data():
@@ -51,9 +52,10 @@ def process_corpus(corpus_dir="final_news_summary.csv"):
     """
     df = pd.read_csv(corpus_dir)
 
+    LIMITER = 1000
     # Select variables
-    y = df.iloc[:, -1].copy().to_numpy()
-    X = df.iloc[:, 0].copy().to_numpy()
+    y = df.iloc[: LIMITER, -1].copy().to_numpy()
+    X = df.iloc[: LIMITER, 0].copy().to_numpy()
 
     print(len(X))
 
@@ -125,26 +127,25 @@ def tokenize(text, token2idx):
             idx += 1
     return tokens
 
+def sort_dataset(input_lines, target_lines):
+    """
+    Sort input-output pairs together by input length descending,
+    preserving correspondence between input and output.
+    """
+    paired = list(zip(input_lines, target_lines))
+    paired.sort(key=lambda x: len(x[0]), reverse=True)  # descending length
+    sorted_inputs, sorted_targets = zip(*paired)
+    return list(sorted_inputs), list(sorted_targets)
 
 def tokenize_list(input_lines, target_lines, input_token2idx, target_token2idx):
     """
     Tokenize a list of lines and return them sorted by length.
     """
     input_tokenized_lines = [tokenize('^'+line+'~', input_token2idx) for line in tqdm(input_lines, desc="Tokenizing corpus")]
-    input_tokenized_lines.sort(key=len)
     output_tokenized_lines = [tokenize('^'+line+'~', target_token2idx) for line in tqdm(target_lines, desc="Tokenizing corpus")]
-    output_tokenized_lines.sort(key=len)
 
-    for i in range(len(input_tokenized_lines)):
-        in_len = len(input_tokenized_lines[i])
-        out_len = len(output_tokenized_lines[i])
-        dif = in_len - out_len
-        if dif > 0:
-            for j in range(dif):
-                output_tokenized_lines[i].append(target_token2idx['~'])
-        else:
-            for j in range(dif):
-                input_tokenized_lines[i].append(input_token2idx['~'])
+    # Sort together by input length descending to keep pairs aligned
+    input_tokenized_lines, output_tokenized_lines = sort_dataset(input_tokenized_lines, output_tokenized_lines)
 
     return input_tokenized_lines, output_tokenized_lines
 
@@ -221,4 +222,14 @@ class TestArticleData(Dataset):
         target = self.t_corpus[idx]
         return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
 
-# process_corpus()
+def collate_batch(batch, input_pad_token=None, target_pad_token=None):
+    """
+    Pads articles and summaries in batch.
+    Accepts custom pad token IDs from dataset.
+    """
+    inputs, targets = zip(*batch)
+    padded_inputs = pad_sequence(inputs, batch_first=True, padding_value=input_pad_token)
+    padded_targets = pad_sequence(targets, batch_first=True, padding_value=target_pad_token)
+    return padded_inputs, padded_targets
+
+#process_corpus()

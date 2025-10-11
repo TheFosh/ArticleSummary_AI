@@ -7,7 +7,7 @@ from torch.nn.utils.rnn import pack_sequence, PackedSequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from CleanArticle import ArticleData
+from CleanArticle import ArticleData, collate_batch
 
 
 class Encoder(nn.Module):
@@ -208,14 +208,19 @@ class Seq2Seq(nn.Module):
 def train_nn(epochs=5, batch_size=32, lr=0.001):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     article_data = ArticleData()
+    enc_voc_size = len(article_data.a_token2idx)
+    dec_voc_size = len(article_data.t_token2idx)
     print("Test 1")
-    model = Seq2Seq(13, 13, 32, 32, 128, 2, 11, 12).to(device)
+    model = Seq2Seq(enc_voc_size, dec_voc_size, 32, 32, 128, 2, 11, 12).to(device)
     loss_fn = nn.CrossEntropyLoss()
+
+    input_pad_token = article_data.a_token2idx['~']
+    target_pad_token = article_data.t_token2idx['~']
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("Test 2")
     for epoch in range(epochs):
-        article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True)
+        article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: collate_batch(batch, input_pad_token, target_pad_token))
         progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
 
         for i, data in enumerate(progress_bar):
@@ -226,13 +231,15 @@ def train_nn(epochs=5, batch_size=32, lr=0.001):
 
             optimizer.zero_grad()
 
-            logits = model(inputs)
+            logits = model(inputs, targets)
+            logits = logits.view(-1, logits.size(-1))  # [batch*seq_len, vocab_size]
+            targets = targets.view(-1)  # [batch*seq_len]
             loss = loss_fn(logits, targets)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            print(model.predict(targets))
+            print(model.predict(inputs))
 
         torch.save(model.state_dict(), "article.pt")
 
