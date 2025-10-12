@@ -1,5 +1,7 @@
 import json
 import random
+import re
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -244,8 +246,7 @@ def train_nn(epochs=5, batch_size=4, lr=0.001):
         for i, data in enumerate(progress_bar):
             model.train()
             inputs, targets = data
-
-            if len(inputs) > MEMORY_LIMIT:
+            if len(inputs[0]) > MEMORY_LIMIT:
                 continue
 
             inputs = inputs.to(device)
@@ -270,16 +271,42 @@ def train_nn(epochs=5, batch_size=4, lr=0.001):
 
         torch.save(model.state_dict(), "article.pt")
 
-def summarize(article_filename = "testFile.txt") -> None:
+def summarize(article_filename = "testFile.json") -> None:
     vocab_size = 2500
-    model = Seq2Seq(vocab_size, 9, 32, 32, 128, 2, vocab_size-2, vocab_size-1)
+    model = Seq2Seq(vocab_size, vocab_size, 32, 32, 128, 2, vocab_size-2, vocab_size-1)
     model.load_state_dict(torch.load("article.pt", map_location="cpu"))
     model.eval()
     with open(article_filename, 'r', encoding="utf-8") as f:
         article = json.load(f)
-    input_tensor = torch.tensor(article)
-    tensor_prediction = model.predict(input_tensor)[0]
-    print(model.convert_to_string(tensor_prediction, ))
+    with open("t_token2idx.json", 'r', encoding="utf-8") as f:
+        token2idx = json.load(f)
 
-train_nn()
+    article_tokens = [tokenize("^"+article+"~", token2idx)]
+    input_tensor = torch.tensor(article_tokens)
+    tensor_prediction = model.predict(input_tensor)[0]
+    print(model.convert_to_string(tensor_prediction))
+
+def tokenize(text, token2idx):
+    """
+    Convert text into a list of token IDs.
+
+    Uses greedy longest-match-first tokenization with a max token length of 5.
+    """
+    text = text.lower()
+    text = re.sub(r"[^a-z,.?!':; $^]", '', text)
+    tokens = []
+    idx = 0
+    while idx < len(text):
+        for token_length in range(min(5, len(text) - idx), 0, -1):
+            substring = text[idx: idx + token_length]
+            if substring in token2idx:
+                tokens.append(token2idx[substring])
+                idx += token_length
+                break
+        else:
+            # If no token matched (shouldn't usually happen), skip one char
+            idx += 1
+    return tokens
+
+# train_nn()
 summarize()
