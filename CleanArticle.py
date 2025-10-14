@@ -195,28 +195,34 @@ def get_only_corpus():
 
 class ArticleData(Dataset):
     def __init__(self, max_length = 5):
-        self.corpus, self.a_token2idx, self.a_idx2token, self.t_corpus, self.t_token2idx, self.t_idx2token = get_cleaned_corpus()
+        self.a_token2idx, self.a_idx2token, self.t_token2idx, self.t_idx2token = get_cleaned_corpus()
         self.max_length = max_length
 
-    def __len__(self):
-        return len(self.corpus)
-
-    def __getitem__(self, idx):
-        sentence = self.corpus[idx]
-        target = self.t_corpus[idx]
-        return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
-
-
-class TestArticleData(Dataset):
-    def __init__(self, max_length = 5):
-        self.corpus, self.t_corpus = get_only_corpus()
+        self.current_inputs = None
+        self.current_targets = None
 
     def __len__(self):
-        return len(self.corpus)
+        return len(self.a_token2idx)
 
     def __getitem__(self, idx):
-        sentence = self.corpus[idx]
-        target = self.t_corpus[idx]
+        sentence = self.current_inputs[idx]
+        target = self.current_targets[idx]
         return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
 
+    def set_file(self, file_idx, input_dir, target_dir):
+        input_files = os.listdir(input_dir)
+        target_files = os.listdir(target_dir)
+        file_name = "corpus" + str(file_idx) + ".json" #TODO
+        input_path = os.path.join(input_dir + file_name)
+        target_path = os.path.join(target_dir + file_name)
+        with open(input_path , 'r', encoding="utf-8") as f:
+            inputs = json.load(f)
+
+        with open(target_path , 'r', encoding="utf-8") as f:
+            targets = json.load(f)
+
+        self.current_inputs = inputs
+        self.current_targets = targets
+
+output_clean_data()
 # process_corpus()
