@@ -29,6 +29,15 @@ def output_clean_data():
     df.replace(['', 'nan', 'NULL', 'None', 'N/A'], np.nan, inplace=True)
     df.dropna(inplace = True)
 
+    df = df[df["article"].str.contains(r"[A-Za-z]", na=False)]
+    df = df[df["summary"].str.contains(r"[A-Za-z]", na=False)]
+
+    df = df[df["article"] != df["summary"]]
+
+    df = df[df["article"].str.len() <= 10000]
+
+    df.reset_index(drop=True, inplace=True)
+
     print(df.info())
     print(df.head(10))
     print(df.isnull().values.any())
@@ -219,4 +228,5 @@ class TestArticleData(Dataset):
         target = self.t_corpus[idx]
         return torch.tensor(sentence, dtype=torch.long), torch.tensor(target, dtype=torch.long)
 
-# process_corpus()
+#output_clean_data()
+#process_corpus()
