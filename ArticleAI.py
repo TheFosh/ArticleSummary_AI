@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import re
 
@@ -241,33 +242,37 @@ def train_nn(epochs=5, batch_size=4, lr=0.001):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("Test 2")
     for epoch in range(epochs):
-        article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
-        progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
-        for i, data in enumerate(progress_bar):
-            model.train()
-            inputs, targets = data
-            if len(inputs[0]) > MEMORY_LIMIT:
-                continue
+        files = os.listdir(corpus_dir)
+        for j in range(len(files)):
+            article_data.set_file(files[j])
+            article_loader = DataLoader(article_data, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
+            progress_bar = tqdm(article_loader, desc=f"Epoch {epoch + 1}/{epochs}")
+            for i, data in enumerate(progress_bar):
+                model.train()
+                inputs, targets = data
 
-            inputs = inputs.to(device)
-            targets = targets.to(device)
+                if len(inputs) > MEMORY_LIMIT:
+                    continue
 
-            output = model(inputs, targets, 0.0)
-            output = output.view(-1, output.size(-1)).to(device)
-            target = targets.view(-1).to(device)
+                inputs = inputs.to(device)
+                targets = targets.to(device)
 
-            loss = loss_fn(output, target).to(device)
+                output = model(inputs, targets, 0.0)
+                output = output.view(-1, output.size(-1)).to(device)
+                target = targets.view(-1).to(device)
 
-            # if i % batch_size == batch_size -1:
-            #     optimizer.zero_grad()
-            #
-            #
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-            predication_tensor = model.predict(inputs)[0]
-            print(model.convert_to_string(predication_tensor))
+                loss = loss_fn(output, target).to(device)
+
+                # if i % batch_size == batch_size -1:
+                #     optimizer.zero_grad()
+                #
+                #
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                predication_tensor = model.predict(inputs)[0]
+                print(model.convert_to_string(predication_tensor))
 
         torch.save(model.state_dict(), "article.pt")
 
