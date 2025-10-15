@@ -39,6 +39,62 @@ def output_clean_data():
 
     print(df.isnull().values.any())
 
+def create_directory(corpus_dir = "final_news_summary.csv",destination_folder_1 = "training",destination_folder_2 = "labels"):
+    df = pd.read_csv(corpus_dir)
+
+    # Select variables
+    y = df.iloc[:, -1].copy().to_numpy()
+    X = df.iloc[:, 0].copy().to_numpy()
+
+    # Build vocab and tokenize corpus
+    a_token2idx, a_idx2token = identify_tokens(X)
+    t_token2idx, t_idx2token = identify_tokens(y)
+
+    #saving tokens in one pass for each
+    with open("token2idx.json", 'w', encoding="utf-8") as f:#token to index
+        json.dump(a_token2idx, f)
+    with open("idx2token.json", 'w', encoding="utf-8") as f:#index to token
+        json.dump(a_idx2token, f)
+    with open("t_token2idx.json", 'w', encoding="utf-8") as f:
+            json.dump(t_token2idx, f)
+    with open("t_idx2token.json", 'w', encoding="utf-8") as f:
+            json.dump(t_idx2token, f)
+    chunk = 1
+
+    while ((chunk-1)*50000) < df.shape[0]:
+        if (chunk*50000) < df.shape[0]:
+            a_tokens = tokenize_list(X[((chunk - 1) * 50000):(chunk *50000)], a_token2idx)
+            t_tokens = tokenize_list(y[((chunk - 1) * 50000):(chunk *50000)], t_token2idx)
+            a_tokens, t_tokens = sort_dataset(a_tokens, t_tokens)
+        else :
+            a_tokens = tokenize_list(X[((chunk - 1) * 50000):], a_token2idx)
+            t_tokens = tokenize_list(y[((chunk - 1) * 50000):], t_token2idx)
+            a_tokens, t_tokens = sort_dataset(a_tokens, t_tokens)
+
+
+        with open(f"training_{str(chunk).zfill(4)}.json", 'w', encoding="utf-8") as f:  # tokenized corpus
+            json.dump(a_tokens, f)
+
+        with open(f"labels_{str(chunk).zfill(4)}.json", 'w', encoding="utf-8") as f:
+            json.dump(t_tokens, f)
+
+        # creates folder if not present
+        if not os.path.exists(destination_folder_1):
+            os.makedirs(destination_folder_1)
+
+        # Move the files
+        destination_path_1 = os.path.join(destination_folder_1, os.path.basename(f"training_{str(chunk).zfill(4)}.json"))
+        os.rename(f"training_{str(chunk).zfill(4)}.json", destination_path_1)
+
+        # creates folder if not present
+        if not os.path.exists(destination_folder_2):
+            os.makedirs(destination_folder_2)
+        destination_path_2 = os.path.join(destination_folder_2, os.path.basename(f"labels_{str(chunk).zfill(4)}.json"))
+
+        os.rename(f"labels_{str(chunk).zfill(4)}.json", destination_path_2)
+
+        chunk = chunk+1
+
 def process_corpus(corpus_dir="final_news_summary.csv"):
     """
     Build the cleaned corpus from scratch:
