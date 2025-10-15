@@ -60,15 +60,15 @@ def create_directory(corpus_dir = "final_news_summary.csv",destination_folder_1 
     with open("t_idx2token.json", 'w', encoding="utf-8") as f:
             json.dump(t_idx2token, f)
     chunk = 1
-
-    while ((chunk-1)*50000) < df.shape[0]:
-        if (chunk*50000) < df.shape[0]:
-            a_tokens = tokenize_list(X[((chunk - 1) * 50000):(chunk *50000)], a_token2idx)
-            t_tokens = tokenize_list(y[((chunk - 1) * 50000):(chunk *50000)], t_token2idx)
+    LIMITER = 50000
+    while ((chunk-1)*LIMITER) < df.shape[0]:
+        if (chunk*LIMITER) < df.shape[0]:
+            a_tokens = tokenize_list(X[((chunk - 1) * LIMITER):(chunk *LIMITER)], a_token2idx)
+            t_tokens = tokenize_list(y[((chunk - 1) * LIMITER):(chunk *LIMITER)], t_token2idx)
             a_tokens, t_tokens = sort_dataset(a_tokens, t_tokens)
         else :
-            a_tokens = tokenize_list(X[((chunk - 1) * 50000):], a_token2idx)
-            t_tokens = tokenize_list(y[((chunk - 1) * 50000):], t_token2idx)
+            a_tokens = tokenize_list(X[((chunk - 1) * LIMITER):], a_token2idx)
+            t_tokens = tokenize_list(y[((chunk - 1) * LIMITER):], t_token2idx)
             a_tokens, t_tokens = sort_dataset(a_tokens, t_tokens)
 
 
