@@ -280,5 +280,5 @@ class ArticleData(Dataset):
         self.current_inputs = inputs
         self.current_targets = targets
 
-output_clean_data()
+# output_clean_data()
 # process_corpus()

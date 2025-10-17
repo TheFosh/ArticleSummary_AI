@@ -63,7 +63,7 @@ class Decoder(nn.Module):
         self.sos_idx = sos_idx
         self.eos_idx = eos_idx
 
-    def forward(self, enc_outputs, enc_h_n, targets, forcing=0.5):
+    def forward(self, enc_outputs, enc_h_n, targets, forcing=0.3):
         """
         Decoder forward pass with teacher forcing.
 
@@ -203,7 +203,7 @@ class Seq2Seq(nn.Module):
 
         return line
 
-    def predict(self, input_tensor, max_len=50):
+    def predict(self, input_tensor, max_len = 50, temp = 0.8):
         """
         Inference forward pass.
 
@@ -214,9 +214,16 @@ class Seq2Seq(nn.Module):
             predicted_sequences: (batch_size, decoded_len)
         """
         self.eval()
+
         with torch.no_grad():
             enc_outputs, enc_h_n = self.encoder(input_tensor)
-            return (self.decoder.inference(enc_outputs, enc_h_n, max_len=max_len))
+            output_tensor = self.decoder.inference(enc_outputs, enc_h_n, max_len=50)
+            logits = self(output_tensor)[-1]
+            logits = logits / temp
+            probs = F.softmax(logits, dim=-1)
+            new_output = torch.multinomial(probs, num_samples=1).item()
+
+            return (new_output)
 
 def collate_batch(batch, input_pad_token=2499, target_pad_token=2499):
     """
